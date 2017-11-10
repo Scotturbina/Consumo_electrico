@@ -1,0 +1,131 @@
+---
+title: "Definicion del proceso de Ciencia de Datos"
+author: "Kevin Scott Urbina Moreira"
+date: "21 de octubre de 2017"
+output: word_document
+---
+
+
+# Adjuntando las librerias requeridas
+
+```{r}
+
+library(readr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(plotly)
+library(dygraphs)
+library(tseries)
+
+```
+
+# Importando el archivo
+
+```{r}
+
+house_power<- read_delim("~/Big data posgrado/Clase 4 Tarea 1/household_power_consumption.txt", ";", escape_double = FALSE, trim_ws = TRUE)
+
+View(house_power)
+
+
+```
+
+
+## Quitar NA 
+
+```{r}
+house_power<-na.omit(house_power)
+
+```
+
+
+# Creando una columna nueva y combinando la fecha y la hora
+
+```{r}
+
+house_power <-cbind(house_power,paste(house_power$Date,house_power$Time), stringsAsFactors=FALSE)
+colnames(house_power)[10] <-"DateTime"
+house_power <- house_power[,c(ncol(house_power), 1:(ncol(house_power)-1))]
+head(house_power)
+
+```
+
+
+# Convitiendo la columna en formato de fecha
+
+```{r}
+
+house_power$DateTime <- strptime(house_power$DateTime, "%d/%m/%Y %H:%M:%S")
+house_power$Date <- as.Date(house_power$Date, "%d/%m/%Y")
+str(house_power)
+
+```
+
+# Convirtiendo active power en Wh
+```{r}
+#Añadimos una columna con el GAP a W·h
+house_power$Global_Consumption <- house_power$Global_active_power*1000/60
+
+
+```
+
+# Agregando los dias, los meses y las estaciones
+
+```{r}
+#Creamos una nueva columna con los d??as de la semana
+house_power$Day <-weekdays(as.Date(house_power$Date, '%d/%m/%Y'))
+
+#Creamos una nueva columna con el mes
+house_power$Month<-months(as.Date(house_power$Date, '%d/%m/%Y'))
+
+```
+
+
+
+
+
+# Box plot de los dias de la semana
+
+```{r}
+
+Boxplotdias<- ggplot()+ geom_boxplot(data = house_power,aes( x= house_power$Day, y= house_power$Global_Consumption, colour=Day)) 
+
+```
+
+
+# Realizar un resument de los datos 
+
+```{r}
+
+summary(house_power)
+
+
+```
+
+## Agregando otros tipos de columnas a la data
+
+
+
+
+
+
+## Realizando algunos graficos para entender la data
+
+
+```{r}
+Trending<-ggplot() + geom_line(data= house_power, aes(x=Date3, y=Global_active_power) )
+
+```
+
+## Empezar a ver la data para el time series
+
+```{r}
+
+Power_e<-ts(house_power[,11], start =c (2006,1), freq=12)
+
+dygraph(Power_e)
+```
+
+data_1<-aggregate(house_power$Global_Consumption~ house_power$Date, data = house_power, mean)
+
