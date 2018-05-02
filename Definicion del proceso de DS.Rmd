@@ -17,6 +17,12 @@ library(ggplot2)
 library(plotly)
 library(dygraphs)
 library(tseries)
+library(xts)
+library(forecast)
+library(zoo)
+library(RColorBrewer)
+library(fmsb)
+
 
 ```
 
@@ -26,8 +32,6 @@ library(tseries)
 
 house_power<- read_delim("~/Big data posgrado/Clase 4 Tarea 1/household_power_consumption.txt", ";", escape_double = FALSE, trim_ws = TRUE)
 
-View(house_power)
-
 
 ```
 
@@ -36,6 +40,7 @@ View(house_power)
 
 ```{r}
 house_power<-na.omit(house_power)
+
 
 ```
 
@@ -47,7 +52,6 @@ house_power<-na.omit(house_power)
 house_power <-cbind(house_power,paste(house_power$Date,house_power$Time), stringsAsFactors=FALSE)
 colnames(house_power)[10] <-"DateTime"
 house_power <- house_power[,c(ncol(house_power), 1:(ncol(house_power)-1))]
-head(house_power)
 
 ```
 
@@ -58,7 +62,6 @@ head(house_power)
 
 house_power$DateTime <- strptime(house_power$DateTime, "%d/%m/%Y %H:%M:%S")
 house_power$Date <- as.Date(house_power$Date, "%d/%m/%Y")
-str(house_power)
 
 ```
 
@@ -66,7 +69,6 @@ str(house_power)
 ```{r}
 #Añadimos una columna con el GAP a W·h
 house_power$Global_Consumption <- house_power$Global_active_power*1000/60
-
 
 ```
 
@@ -79,19 +81,10 @@ house_power$Day <-weekdays(as.Date(house_power$Date, '%d/%m/%Y'))
 #Creamos una nueva columna con el mes
 house_power$Month<-months(as.Date(house_power$Date, '%d/%m/%Y'))
 
-```
-
-
-
-
-
-# Box plot de los dias de la semana
-
-```{r}
-
-Boxplotdias<- ggplot()+ geom_boxplot(data = house_power,aes( x= house_power$Day, y= house_power$Global_Consumption, colour=Day)) 
+house_power$Year_Month<- as.yearmon (as.Date(house_power$Date, '%d/%m/%Y'))
 
 ```
+
 
 
 # Realizar un resument de los datos 
@@ -103,29 +96,297 @@ summary(house_power)
 
 ```
 
-## Agregando otros tipos de columnas a la data
+## quitat mes de diciembre del año 2006
+
+```{r}
+
+house_power<- subset(house_power, Year_Month!= "dic. 2006")
+
+```
 
 
-
-
-
-
-## Realizando algunos graficos para entender la data
+#Sumarizando la data1
 
 
 ```{r}
-Trending<-ggplot() + geom_line(data= house_power, aes(x=Date3, y=Global_active_power) )
+
+data_1<-aggregate(Global_Consumption~ Date + Day + Month, data = house_power, mean)
+data_2<-aggregate(Sub_metering_1~ Date + Day + Month, data = house_power, mean)
+data_3<-aggregate(Sub_metering_2~ Date + Day + Month, data = house_power, mean)
+data_4<-aggregate(Sub_metering_3~ Date + Day + Month, data = house_power, mean)
+data_5_model<-aggregate(Global_Consumption~ Date , data = house_power, mean)
+
+
+Nueva_data<-xts(data_2$Sub_metering_1, order.by = data_2$Date, freq=365)
+
+Nueva_data<-cbind(Nueva_data, data_3$Sub_metering_2, data_4$Sub_metering_3)
+colnames(Nueva_data)<-c( "Sub_1", "Sub_2", "Sub_3")
 
 ```
+
+## Graficos comparando las sub mediciones
+
+```{r}
+sub<- ggplot()+ geom_line(data = house_power, aes(x=Date, y= Sub_metering_1))+ geom_line(data = house_power, aes(x=Date, y= Sub_metering_1))
+
+```
+
+
 
 ## Empezar a ver la data para el time series
 
 ```{r}
 
-Power_e<-ts(house_power[,11], start =c (2006,1), freq=12)
+Power_e<-xts(data_5_model$Global_Consumption, order.by = data_5_model$Date , freq=365)
 
-dygraph(Power_e)
+graph1<-dygraph(Power_e, main= "Consumo electrico") %>%
+  dyRangeSelector()
+
+
 ```
 
-data_1<-aggregate(house_power$Global_Consumption~ house_power$Date, data = house_power, mean)
+
+## Empezar a ver la data para el time series
+
+```{r}
+
+
+graph2<-dygraph(Nueva_data, main= "Consumo electrico") %>%
+  dyOptions(colors= brewer.pal(3,"Set2"))
+
+
+
+```
+
+## Comparacion por meses
+
+```{r}
+
+MonthComparison<- ggplot()+geom_boxplot(data = data_1, aes(x=Month, y=Global_Consumption, colour= Month))+ ggtitle("Comparacion de consumo entre meses.")
+
+
+```
+
+##Comparacion por dias
+
+```{r}
+
+data_6<-aggregate(Global_Consumption~ Day , data = house_power, mean)
+
+DayComparison<-ggplot(data = data_6, aes(x=Day, y= Global_Consumption))+ geom_bar( stat= "identity")
+
+```
+
+
+
+
+# Descomposicion de la serie de tiempo
+
+```{r}
+
+Descomp_data<-ts(data_5_model$Global_Consumption, start = c(2007,1) ,freq=365)
+
+Descomposicion<-stl(Descomp_data, s.window="periodic")
+
+plot(Descomposicion)
+
+
+
+```
+
+
+##  Programming relative error function
+
+```{r}
+
+RE<- function(Fore,Real) {
+  return(sum(abs(Fore-Real))/ abs(sum(Real)))
+}
+
+
+```
+
+
+## Programming MSE (mean squared error) function
+```{r}
+MSE<- function(Fore,Real){
+  N<-length(Real)
+  ss<-sum((Real-Fore)^2)
+  return((1/N)*ss)
+}
+```
+
+## Programming failure percentage (up)
+
+```{r}
+
+
+FP<- function(Fore, Real) {
+  Total<-0
+  N<-length(Fore)
+  for (i in 1:N) {
+    if (Fore[i]>=Real[i])
+      Total<- Total+1
+    
+  }
+  return(Total/N)
+  
+}
+
+
+
+```
+
+
+## Training data
+
+```{r}
+
+data_5_model_training<-Descomp_data[1:992]
+
+data_5_model_training<-ts(data_5_model_training,start = c(2007,1),freq=365)
+
+
+```
+
+## Testing data
+
+```{r}
+data_5_model_testing<-Descomp_data[993:1417]
+
+
+
+```
+
+## Modelo 1 Winters
+
+```{r}
+mod1<- HoltWinters(data_5_model_training)
+
+plot(mod1)
+```
+
+## Se pronostica para sacar metricas del modelo
+
+```{r}
+res1<-predict(mod1, n.ahead = 425)
+
+
+
+```
+
+
+## Calculando erorres del modelos
+
+```{r}
+Relative_error<-RE(res1,data_5_model_testing)
+
+Mean_Squared_e<- sqrt( MSE(res1, data_5_model_testing))
+
+Percentage_Failed<- FP(res1, data_5_model_testing)
+
+err1<-c(Relative_error,Mean_Squared_e,Percentage_Failed)
+
+```
+
+
+## Modelo 2 Winters
+
+```{r}
+mod2<-HoltWinters(data_5_model_training, alpha = 0.000001, beta = 0, gamma = 0.45)
+
+res2<-predict(mod2, n.ahead = 425)
+
+```
+
+
+## Calculando erorres del modelos
+```{r}
+Relative_error2<-RE(res2,data_5_model_testing)
+
+Mean_Squared_e2<- sqrt( MSE(res2, data_5_model_testing))
+
+Percentage_Failed2<- FP(res2, data_5_model_testing)
+
+err2<-c(Relative_error2,Mean_Squared_e2,Percentage_Failed2)
+
+
+
+```
+
+
+
+## realizar autoarima
+
+
+```{r}
+
+auto_arima<-auto.arima(data_5_model_training)
+
+auto_arima
+
+
+```
+
+
+
+## realizar pronostico ARIMA
+
+```{r}
+
+fit<-arima(data_5_model_training, order = c(7,2,1), seasonal = list(order= c(0.2,0.2,0)))
+
+res3<-predict(fit,n.ahead = 425)
+
+
+```
+
+
+## Calculando errores
+
+```{r}
+
+
+Relative_error3<-RE(res3$pred, data_5_model_testing)
+
+Mean_Squared_e3<- sqrt( MSE(res3$pred, data_5_model_testing))
+
+Percentage_Failed3<- FP(res3$pred, data_5_model_testing)
+
+err3<-c(Relative_error3,Mean_Squared_e3,Percentage_Failed3)
+
+errors<-rbind(err1,err2,err3)
+rownames(errors)<-c("Errors Winters Mod 1", "Errors Winters Mod 2", "Errors ARIMA")
+colnames(errors)<-c("relative error", "mean squared error", "%failed error (up)")
+
+errors<-as.data.frame(errors)
+maxim<-apply(errors,2,max)
+minim<-apply(errors,2,min)
+errors<-rbind(minim,errors)
+errors<-rbind(maxim,errors)
+errors
+
+```
+
+## Comparacion de modelos
+
+```{r}
+radchar<-radarchart(errors, maxmin = TRUE, axistype = 4, axislabcol = "slategray4",
+           centerzero = TRUE, seg = 2,cglcol = "gray67",
+           pcol = c("green","blue","red"),
+           plty = 2,
+           plwd = 4,
+           title = "Errors Comparison")
+
+leg<-legend(1.5,1 ,legend= c("Winters 1", "Winters 2", "ARIMA"),
+            seg.len = -1.2,
+            title = "Errors",
+            pch = 21,
+            bty = "n", lwd = 3, y.intersp = 1, horiz = FALSE,
+            col = c("green", "blue", "red"))
+
+
+
+
+```
 
